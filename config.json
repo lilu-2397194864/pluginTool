@@ -1,0 +1,76 @@
+{
+    "application": {
+      "name": "Dynamic Plugin System",
+      "version": "2.0",
+      "description": "Application framework supporting dynamic plugin loading"
+    },
+    "categories": [
+      {
+        "name": "learn",
+        "display_name": "Learning Tools",
+        "description": "Learning-related tool plugins",
+        "icon": "",
+        "plugins": [
+          {
+            "name": "ocr",
+            "display_name": "OCR Recognition",
+            "description": "Image text recognition tool with Ollama support",
+            "ui_file": "plugins/learn/ocr/ui_ocr.ui",
+            "author": "System Plugin Group",
+            "version": "2.0",
+            "enabled": true
+          },
+          {
+            "name": "editor",
+            "display_name": "Text Editor",
+            "description": "Multi-functional text editor with annotation support",
+            "ui_file": "plugins/learn/editor/ui_editor.ui",
+            "author": "System Plugin Group",
+            "version": "2.0",
+            "enabled": true
+          },
+          {
+            "name": "quiz",
+            "display_name": "quiz",
+            "description": "quiz",
+            "ui_file": "plugins/learn/quiz/ui_quiz.ui",
+            "author": "System Plugin Group",
+            "version": "2.0",
+            "enabled": true
+          },
+          {
+            "name": "mind",
+            "display_name": "mind",
+            "description": "mind",
+            "ui_file": "plugins/learn/mind/ui_mind.ui",
+            "author": "System Plugin Group",
+            "version": "2.0",
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "name": "tools",
+        "display_name": "Utility Tools",
+        "description": "Various utility tool plugins",
+        "icon": "",
+        "plugins": [
+          {
+            "name": "calculator",
+            "display_name": "Calculator",
+            "description": "Simple calculator tool",
+            "ui_file": "",
+            "author": "System Plugin Group",
+            "version": "1.0",
+            "enabled": false
+          }
+        ]
+      }
+    ],
+    "settings": {
+      "auto_load_plugins": true,
+      "enable_plugin_communication": true,
+      "log_level": "info",
+      "default_category": "learn"
+    }
+  }

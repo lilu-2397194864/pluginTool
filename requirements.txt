@@ -1,0 +1,5 @@
+dashscope==1.25.10
+ollama==0.6.1
+PyQt6==6.10.2
+pyqt6_sip==13.11.0
+Requests==2.32.5

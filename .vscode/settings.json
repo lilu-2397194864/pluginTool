@@ -1,0 +1,16 @@
+{
+    "python.analysis.extraPaths": [
+        "./common",
+        "./plugins"
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.autoImportCompletions": true,
+    "python.languageServer": "Pylance",
+    "[python]": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "always"
+        }
+    }
+}

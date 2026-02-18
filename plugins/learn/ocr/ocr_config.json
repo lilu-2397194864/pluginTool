@@ -1,0 +1,28 @@
+{
+  "providers": {
+    "ollama": {
+      "display_name": "OLLAMA",
+      "params": [
+        {
+          "display": "http://localhost:11434",
+          "value": "http://localhost:11434"
+        },
+        {
+          "display": "http://192.168.1.150:11434",
+          "value": "http://192.168.1.150:11434"
+        }
+      ],
+      "default_param": "http://localhost:11434"
+    },
+    "qwen": {
+      "display_name": "QWEN",
+      "params": [
+        {
+          "display": "sk-f220dff5e50b4a46bc1757c04bf5539d",
+          "value": "sk-f220dff5e50b4a46bc1757c04bf5539d"
+        }
+      ],
+      "default_param": "sk-f220dff5e50b4a46bc1757c04bf5539d"
+    }
+  }
+}
