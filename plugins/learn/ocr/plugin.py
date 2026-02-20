@@ -680,7 +680,7 @@ class OcrPlugin(BasePlugin):
             # 执行OCR
             result = self.aiClient.extract_image_text(
                 image_path=image_path,
-                # model_name=model_name,
+                model_name="qwen3-vl:235b-cloud",
                 temperature=0.01,
                 detail_level='simple'
             )

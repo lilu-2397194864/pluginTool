@@ -18,7 +18,7 @@ class OllamaAPITester(AIProviderInterface):
     
     def __init__(self, base_url: str = "http://localhost:11434"):
         """初始化Ollama API测试器"""
-        self.logger = Logger('OLLAMA_API_TEST')
+        self.logger = Logger('OLLAMA_API')
         self.base_url = base_url
         self.client = ollama.Client(host=base_url)
         
@@ -303,7 +303,7 @@ class OllamaAPITester(AIProviderInterface):
             self.logger.context(logging.ERROR, error_msg)
             return None
     
-    def chat_completion(self, model_name: str = "deepseek-r1:1.5b", prompt: str = None,
+    def chat_completion(self, model_name: str = "deepseek-v3.1:671b-cloud", prompt: str = None,
                        temperature: float = 0.7, max_length: int = 500) -> Dict[str, Any]:
         """聊天完成"""
         self.logger.context(logging.INFO, f'Start testing chat completion API')
@@ -312,7 +312,7 @@ class OllamaAPITester(AIProviderInterface):
             # Get model name
             target_model = self._get_model(model_name, 'chat')
             if not target_model:
-                self.logger.context(logging.ERROR, 'Cannot get chat model')
+                self.logger.context(logging.ERROR, f'Cannot get chat model, {model_name}')
                 return None
             
             # Set prompt

@@ -1387,6 +1387,7 @@ class QuizPlugin(BasePlugin):
 
         return "\n".join(descriptions)
 
+
     def generate_quiz(self, source_text, question_types, question_count=5, difficulty="Medium"):
         """
         生成测试题（自动匹配源文本语言）
@@ -1418,94 +1419,14 @@ class QuizPlugin(BasePlugin):
             question_types_str = ", ".join(question_types)
             question_types_short_str = ", ".join(question_types_short)
 
-            prompt = f"""Based on the following text, generate a quiz with exactly {question_count} questions in JSON format.
-
-Text to analyze:
-{source_text[:16384]}...\n\n"""
-
-            # 包含样式描述（如果启用）
-            include_styles = (hasattr(self.ui, 'checkBoxIncludeStyles') and
-                              self.ui.checkBoxIncludeStyles.isChecked())
-            if include_styles and self.current_styles:
-                self.logger.context(self.logger.INFO, "Including text style description in prompt")
-                style_description = self._build_style_description(self.current_styles, source_text)
-                style_prompt = f"""
-Additionally, the following text style information (character indices and formatting) is available for the source text.
-These styles (bold, color, background, etc.) indicate important or emphasized parts. Use this information to identify key points for generating quiz questions.
-Style descriptions:
-{style_description}
-
-"""
-                prompt += style_prompt
-
-            prompt += f"""
-Requirements:
-0. **IMPORTANT**: Generate all questions (including Question text, Options, Answer, and Analysis) in **{target_lang}**.
-   If the source text is Chinese, all output must be in Chinese; if the source text is English, output must be in English.
-1. Create exactly {question_count} questions
-2. ONLY generate the following question types: {question_types_str}
-3. DO NOT generate any other question types
-4. Difficulty level: {difficulty}
-5. Return the result as a valid JSON array of objects
-6. Each question object must follow these formats:
-
-"""
-
-            if "multiple choice" in question_types:
-                prompt += """For multiple choice questions (type: "choice"):
-    {{
-        "Type": "choice",
-        "Number": 1,
-        "Question": "Question text here",
-        "Options": {{
-            "A": "Option A text",
-            "B": "Option B text",
-            "C": "Option C text",
-            "D": "Option D text"
-        }},
-        "Answer": "Correct answer letter (A, B, C, or D)",
-        "Analysis": "Analyze the answer to the question and provide the source from the text"
-    }}
-
-"""
-
-            if "fill in the blank" in question_types:
-                prompt += """For fill-in-the-blank questions (type: "fill"):
-    {{
-        "Type": "fill",
-        "Number": 2,
-        "Question": "Sentence with blank indicated by ___, e.g., The capital of France is ___.",
-        "Answer": "Correct answer to fill the blank",
-        "Analysis": "Analyze the answer to the question and provide the source from the text"
-    }}
-
-"""
-
-            if "short answer" in question_types:
-                prompt += """For Q&A questions (type: "Q&A"):
-    {{
-        "Type": "Q&A",
-        "Number": 3,
-        "Question": "Question text here",
-        "Answer": "Detailed answer to the question",
-        "Analysis": "Analyze the answer to the question and provide the source from the text"
-    }}
-
-"""
-
-            prompt += f"""
-    Important instructions:
-    1. The response must be ONLY a valid JSON array, no additional text
-    2. ONLY generate questions of the specified types: {question_types_str}
-    3. For multiple choice questions, always provide exactly 4 options (A, B, C, D)
-    4. For fill-in-the-blank questions, use "___" to indicate blanks in the question
-    5. For Analysis field, explain why the answer is correct and cite the specific part of the source text
-    6. Number questions sequentially from 1 to {question_count}
-    7. Distribute the {question_count} questions evenly among the selected question types
-    8. If only one question type is selected, generate all {question_count} questions of that type
-    9. **ALL text content (Question, Options, Answer, Analysis) must be in {target_lang}.**
-
-    Generate the quiz now and return ONLY the JSON array:"""
+            prompt = self._build_quiz_prompt(
+                source_text=source_text,
+                target_lang=target_lang,
+                question_count=question_count,
+                question_types=question_types,
+                question_types_str=question_types_str,
+                difficulty=difficulty
+            )
 
             self.logger.context(self.logger.INFO, f"Calling AI to generate quiz in {target_lang}, types: {question_types_str}")
             result = self.aiClient.chat_completion(
@@ -1519,55 +1440,400 @@ Requirements:
                 self.logger.context(self.logger.ERROR, error_msg)
                 return None
 
-            if isinstance(result, dict) and 'message' in result:
-                response_text = result['message'].get('content', '')
-            elif isinstance(result, dict) and 'response' in result:
-                response_text = result['response']
-            else:
-                response_text = str(result)
-
+            # 正确提取文本内容
+            response_text = self._extract_text_from_response(result)
+            
             if not response_text:
                 warning_msg = 'AI returned empty response'
                 self.logger.context(self.logger.WARN, warning_msg)
                 QMessageBox.information(self.widget, "Information", "No quiz generated.")
                 return []
 
-            try:
-                json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group(0)
-                else:
-                    json_str = response_text
-
-                print(f"json_str: \n{json_str}")
-                quiz_data = json.loads(json_str)
-
-                if not isinstance(quiz_data, list):
-                    raise ValueError("Response is not a JSON array")
-
-                generated_types = set([q.get('Type', '').lower() for q in quiz_data])
-                expected_types = set(question_types_short)
-                unexpected_types = generated_types - expected_types
-
-                if unexpected_types:
-                    self.logger.context(self.logger.WARN,
-                                      f"AI generated unexpected question types: {unexpected_types}")
-
-                self.logger.context(self.logger.INFO,
-                                  f'Quiz generation successful, {len(quiz_data)} questions generated')
-                return quiz_data
-
-            except (json.JSONDecodeError, ValueError) as e:
-                error_msg = f'Failed to parse JSON response: {str(e)}'
+            # 解析JSON响应
+            quiz_data = self._parse_ai_response(response_text)
+            
+            if quiz_data is None:
+                error_msg = 'Failed to parse AI response as JSON'
                 self.logger.context(self.logger.ERROR, error_msg)
                 QMessageBox.warning(self.widget, "Error", f"Quiz generation failed: {error_msg}")
                 return None
+
+            # 验证解析结果
+            if not isinstance(quiz_data, list):
+                self.logger.context(self.logger.ERROR, "Parsed data is not a list")
+                return None
+
+            # 检查生成的题目类型
+            generated_types = set()
+            for q in quiz_data:
+                if isinstance(q, dict):
+                    q_type = q.get('Type', '').lower()
+                    if q_type:
+                        generated_types.add(q_type)
+            
+            expected_types = set(question_types_short)
+            unexpected_types = generated_types - expected_types
+
+            if unexpected_types:
+                self.logger.context(self.logger.WARN,
+                                f"AI generated unexpected question types: {unexpected_types}")
+
+            self.logger.context(self.logger.INFO,
+                            f'Quiz generation successful, {len(quiz_data)} questions generated')
+            return quiz_data
 
         except Exception as e:
             error_msg = f'Quiz generation failed: {str(e)}'
             self.logger.context(self.logger.ERROR, error_msg)
             return None
 
+    def _extract_text_from_response(self, result):
+        """
+        从AI响应中提取文本内容
+        处理各种可能的返回格式
+        """
+        if not result:
+            return None
+        
+        self.logger.context(self.logger.DEBUG, f"Response type: {type(result)}")
+        
+        # 情况1: 结果是字符串
+        if isinstance(result, str):
+            return result
+        
+        # 情况2: 结果是字典
+        if isinstance(result, dict):
+            # 尝试常见的字段名
+            for field in ['content', 'message', 'response', 'text', 'output']:
+                if field in result:
+                    value = result[field]
+                    if isinstance(value, dict) and 'content' in value:
+                        return value['content']
+                    if isinstance(value, str):
+                        return value
+                    return str(value)
+            
+            # 如果以上字段都不存在，返回整个字典的字符串表示
+            return str(result)
+        
+        # 情况3: 结果是包含message属性的对象（如日志中所示）
+        if hasattr(result, 'message'):
+            message = result.message
+            if hasattr(message, 'content'):
+                return message.content
+            if isinstance(message, dict) and 'content' in message:
+                return message['content']
+            return str(message)
+        
+        # 情况4: 结果是列表
+        if isinstance(result, list):
+            if len(result) > 0:
+                return self._extract_text_from_response(result[0])
+            return None
+        
+        # 情况5: 其他类型，尝试转换为字符串
+        try:
+            return str(result)
+        except:
+            return None
+
+    def _build_quiz_prompt(self, source_text, target_lang, question_count, question_types, question_types_str, difficulty):
+        """构建提示词"""
+        prompt = f"""Based on the following text, generate a quiz with exactly {question_count} questions in JSON format.
+
+    Text to analyze:
+    {source_text[:16384]}...\n\n"""
+
+        # 包含样式描述（如果启用）
+        include_styles = (hasattr(self.ui, 'checkBoxIncludeStyles') and
+                        self.ui.checkBoxIncludeStyles.isChecked())
+        if include_styles and self.current_styles:
+            self.logger.context(self.logger.INFO, "Including text style description in prompt")
+            style_description = self._build_style_description(self.current_styles, source_text)
+            style_prompt = f"""
+    Additionally, the following text style information (character indices and formatting) is available for the source text.
+    These styles (bold, color, background, etc.) indicate important or emphasized parts. Use this information to identify key points for generating quiz questions.
+    Style descriptions:
+    {style_description}
+
+    """
+            prompt += style_prompt
+
+        prompt += f"""
+    Requirements:
+    0. **IMPORTANT**: Generate all questions (including Question text, Options, Answer, and Analysis) in **{target_lang}**.
+    If the source text is Chinese, all output must be in Chinese; if the source text is English, output must be in English.
+    1. Create exactly {question_count} questions
+    2. ONLY generate the following question types: {question_types_str}
+    3. DO NOT generate any other question types
+    4. Difficulty level: {difficulty}
+    5. Return the result as a valid JSON array of objects
+    6. Each question object must follow these formats:
+
+    """
+
+        if "multiple choice" in question_types:
+            prompt += """For multiple choice questions (type: "choice"):
+        {{
+            "Type": "choice",
+            "Number": 1,
+            "Question": "Question text here",
+            "Options": {{
+                "A": "Option A text",
+                "B": "Option B text",
+                "C": "Option C text",
+                "D": "Option D text"
+            }},
+            "Answer": "Correct answer letter (A, B, C, or D)",
+            "Analysis": "Analyze the answer to the question and provide the source from the text"
+        }}
+
+    """
+
+        if "fill in the blank" in question_types:
+            prompt += """For fill-in-the-blank questions (type: "fill"):
+        {{
+            "Type": "fill",
+            "Number": 2,
+            "Question": "Sentence with blank indicated by ___, e.g., The capital of France is ___.",
+            "Answer": "Correct answer to fill the blank",
+            "Analysis": "Analyze the answer to the question and provide the source from the text"
+        }}
+
+    """
+
+        if "short answer" in question_types:
+            prompt += """For Q&A questions (type: "Q&A"):
+        {{
+            "Type": "Q&A",
+            "Number": 3,
+            "Question": "Question text here",
+            "Answer": "Detailed answer to the question",
+            "Analysis": "Analyze the answer to the question and provide the source from the text"
+        }}
+
+    """
+
+        prompt += f"""
+        Important instructions:
+        1. The response must be ONLY a valid JSON array, no additional text
+        2. ONLY generate questions of the specified types: {question_types_str}
+        3. For multiple choice questions, always provide exactly 4 options (A, B, C, D)
+        4. For fill-in-the-blank questions, use "___" to indicate blanks in the question
+        5. For Analysis field, explain why the answer is correct and cite the specific part of the source text
+        6. Number questions sequentially from 1 to {question_count}
+        7. Distribute the {question_count} questions evenly among the selected question types
+        8. If only one question type is selected, generate all {question_count} questions of that type
+        9. **ALL text content (Question, Options, Answer, Analysis) must be in {target_lang}.**
+
+        Generate the quiz now and return ONLY the JSON array:"""
+
+        return prompt
+
+    def _parse_ai_response(self, response_text):
+        """
+        从AI响应中健壮地解析JSON数据
+        返回解析后的数据或None
+        """
+        if not response_text:
+            return None
+        
+        original_text = response_text
+        self.logger.context(self.logger.DEBUG, f"Original response length: {len(original_text)}")
+        
+        # 步骤1: 基本清理 - 移除首尾空白
+        cleaned = response_text.strip()
+        
+        # 步骤2: 移除Markdown代码块标记
+        cleaned = re.sub(r'^```[a-zA-Z]*\s*', '', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+        
+        # 步骤3: 移除所有可能的控制字符和不可见Unicode字符
+        def is_valid_char(char):
+            code = ord(char)
+            # 允许常见的空白字符
+            if char in '\n\r\t':
+                return True
+            # 允许所有可打印ASCII字符和常见的中文等Unicode字符
+            if code >= 32 and code != 0xFEFF:  # 排除BOM
+                return True
+            # 允许常见的中文字符范围
+            if 0x4E00 <= code <= 0x9FFF:
+                return True
+            return False
+        
+        cleaned = ''.join(c for c in cleaned if is_valid_char(c))
+        
+        # 步骤4: 移除可能存在的BOM标记
+        if cleaned.startswith('\ufeff'):
+            cleaned = cleaned[1:]
+        
+        # 步骤5: 尝试多种方法提取JSON
+        
+        # 方法1: 查找完整的JSON数组
+        json_str = self._extract_json_array(cleaned)
+        if json_str:
+            try:
+                data = json.loads(json_str)
+                self.logger.context(self.logger.INFO, "Successfully parsed JSON array")
+                return data
+            except json.JSONDecodeError as e:
+                self.logger.context(self.logger.DEBUG, f"Method 1 failed: {e}")
+        
+        # 方法2: 查找JSON对象（如果不是数组）
+        json_str = self._extract_json_object(cleaned)
+        if json_str:
+            try:
+                data = json.loads(json_str)
+                # 如果是单个对象，包装成数组
+                if isinstance(data, dict):
+                    self.logger.context(self.logger.INFO, "Successfully parsed JSON object, wrapping in array")
+                    return [data]
+                return data
+            except json.JSONDecodeError as e:
+                self.logger.context(self.logger.DEBUG, f"Method 2 failed: {e}")
+        
+        # 方法3: 使用正则表达式查找JSON数组
+        match = re.search(r'\[\s*\{.*\}\s*\]', cleaned, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(0))
+                self.logger.context(self.logger.INFO, "Successfully parsed JSON using regex")
+                return data
+            except json.JSONDecodeError as e:
+                self.logger.context(self.logger.DEBUG, f"Method 3 failed: {e}")
+        
+        # 方法4: 尝试修复常见的JSON格式问题
+        fixed_json = self._fix_json_string(cleaned)
+        if fixed_json:
+            try:
+                data = json.loads(fixed_json)
+                self.logger.context(self.logger.INFO, "Successfully parsed JSON after fixing")
+                return data
+            except json.JSONDecodeError as e:
+                self.logger.context(self.logger.DEBUG, f"Method 4 failed: {e}")
+        
+        # 所有方法都失败
+        self.logger.context(self.logger.ERROR, "All JSON parsing methods failed")
+        self.logger.context(self.logger.DEBUG, f"Failed to parse: {cleaned[:500]}")
+        return None
+
+    def _extract_json_array(self, text):
+        """
+        使用括号匹配算法提取JSON数组
+        返回提取的JSON字符串或None
+        """
+        start_idx = text.find('[')
+        if start_idx == -1:
+            return None
+        
+        stack = []
+        in_string = False
+        escape_next = False
+        
+        for i in range(start_idx, len(text)):
+            char = text[i]
+            
+            if escape_next:
+                escape_next = False
+                continue
+            
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+            
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            
+            if not in_string:
+                if char == '[':
+                    stack.append(char)
+                elif char == ']':
+                    if stack:
+                        stack.pop()
+                        if not stack:
+                            return text[start_idx:i+1]
+        
+        return None
+
+    def _extract_json_object(self, text):
+        """
+        使用括号匹配算法提取JSON对象
+        返回提取的JSON字符串或None
+        """
+        start_idx = text.find('{')
+        if start_idx == -1:
+            return None
+        
+        stack = []
+        in_string = False
+        escape_next = False
+        
+        for i in range(start_idx, len(text)):
+            char = text[i]
+            
+            if escape_next:
+                escape_next = False
+                continue
+            
+            if char == '\\' and in_string:
+                escape_next = True
+                continue
+            
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            
+            if not in_string:
+                if char == '{':
+                    stack.append(char)
+                elif char == '}':
+                    if stack:
+                        stack.pop()
+                        if not stack:
+                            return text[start_idx:i+1]
+        
+        return None
+
+    def _fix_json_string(self, text):
+        """
+        尝试修复常见的JSON格式问题
+        """
+        if not text:
+            return None
+        
+        # 查找可能的JSON开始
+        start = -1
+        for i, char in enumerate(text):
+            if char in '[{':
+                start = i
+                break
+        
+        if start == -1:
+            return None
+        
+        # 截取从开始到结尾
+        candidate = text[start:]
+        
+        # 移除末尾的非JSON字符
+        end = len(candidate)
+        for i in range(len(candidate)-1, -1, -1):
+            if candidate[i] in '}]':
+                end = i + 1
+                break
+        
+        candidate = candidate[:end]
+        
+        # 确保引号正确配对
+        try:
+            # 尝试解析
+            json.loads(candidate)
+            return candidate
+        except json.JSONDecodeError:
+            # 如果失败，返回None
+            return None
+    
     def generate_plain_text(self, quiz_data):
         """生成纯文本格式（用于导出）"""
         if not quiz_data:
